@@ -1,0 +1,52 @@
+name: Build APK and AAB
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "exrackt gopi note"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
+
+      - name: Build APK and AAB
+        run: gradle assembleRelease bundleRelease --no-daemon
+
+      - name: Collect files
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/NotesMVP.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/NotesMVP.aab"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NotesMVP-build
+          path: |
+            NotesMVP.apk
+            NotesMVP.aab
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Notes MVP (latest build)
+          files: |
+            NotesMVP.apk
+            NotesMVP.aab
