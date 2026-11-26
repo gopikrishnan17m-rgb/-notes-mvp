@@ -11,9 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: "exrackt gopi note"
     steps:
       - uses: actions/checkout@v4
 
@@ -29,9 +26,11 @@ jobs:
           gradle-version: '8.5'
 
       - name: Build APK and AAB
+        working-directory: exrackt gopi note
         run: gradle assembleRelease bundleRelease --no-daemon
 
       - name: Collect files
+        working-directory: exrackt gopi note
         run: |
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/NotesMVP.apk"
           cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/NotesMVP.aab"
