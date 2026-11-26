@@ -1,0 +1,9 @@
+Notes MVP - technical notes
+- Package: com.notesmvp.app | minSdk 26 | targetSdk 34 | Kotlin 1.9.22 | AGP 8.2.2 | OkHttp 4.12.0
+- Supabase project id: wkpltpzrqforlqisiblt (ap-south-1). Table public.notes, RLS enabled, 4 owner-only policies.
+- App holds ONLY the publishable key (Config.kt). Never ship a service_role key.
+- Auth: REST /auth/v1 (signup, password login, refresh, logout). Session in SharedPreferences.
+- Data: PostgREST /rest/v1/notes with Bearer <user JWT> + apikey header.
+- Token refresh: before calls when <60s left, and once on 401; failure -> login screen.
+- Not yet verified by a real build. First GitHub Actions run is the compile test.
+- Next ideas: search, pin/colour, offline cache, password reset, AI feature via Edge Function.
