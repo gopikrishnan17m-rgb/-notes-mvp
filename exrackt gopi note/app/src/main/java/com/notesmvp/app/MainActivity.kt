@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.text.InputFilter
 import android.text.InputType
@@ -13,9 +14,11 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -42,6 +45,10 @@ class MainActivity : Activity() {
     private val strings = mapOf(
         "en" to mapOf(
             "app" to "Notes",
+            "guest" to "Continue as guest",
+            "guest_hint" to "No email needed. Guest notes stay only on this phone and are lost if you uninstall the app.",
+            "guest_label" to "Guest mode: notes are saved only on this phone",
+            "account" to "Log in / Sign up",
             "tagline" to "Your private notes, synced to the cloud",
             "login" to "Log in",
             "signup" to "Create account",
@@ -79,6 +86,10 @@ class MainActivity : Activity() {
         ),
         "ta" to mapOf(
             "app" to "குறிப்புகள்",
+            "guest" to "விருந்தினராகத் தொடரவும்",
+            "guest_hint" to "மின்னஞ்சல் தேவையில்லை. விருந்தினர் குறிப்புகள் இந்த போனில் மட்டுமே இருக்கும்; ஆப்பை நீக்கினால் அழிந்துவிடும்.",
+            "guest_label" to "விருந்தினர் முறை: குறிப்புகள் இந்த போனில் மட்டும்",
+            "account" to "உள்நுழை / பதிவு",
             "tagline" to "உங்கள் தனிப்பட்ட குறிப்புகள், கிளவுடில் சேமிக்கப்படும்",
             "login" to "உள்நுழை",
             "signup" to "கணக்கு உருவாக்கு",
@@ -203,7 +214,21 @@ class MainActivity : Activity() {
         Store.init(applicationContext)
         root = FrameLayout(this).apply { setBackgroundColor(cBg) }
         setContentView(root)
-        if (Store.session() != null) showNotes() else showAuth()
+        applySystemBarInsets()
+        if (Store.guest || Store.session() != null) showNotes() else showAuth()
+    }
+
+    /** Android 15+ draws apps behind the system bars, so keep content clear of them and the keyboard. */
+    @Suppress("DEPRECATION")
+    private fun applySystemBarInsets() {
+        if (Build.VERSION.SDK_INT < 35) return
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val i = insets.getInsets(
+                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime()
+            )
+            v.setPadding(i.left, i.top, i.right, i.bottom)
+            insets
+        }
     }
 
     override fun onDestroy() {
@@ -308,6 +333,20 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
         )
 
+        col.addView(
+            button(t("guest"), false) {
+                hideKeyboard()
+                Store.clear()
+                Store.guest = true
+                showNotes()
+            }.apply { background = rounded(cField, 14) },
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) }
+        )
+        col.addView(tv(t("guest_hint"), 13f, cMuted).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, 0)
+        })
+
         root.addView(scroll, FrameLayout.LayoutParams(-1, -1))
     }
 
@@ -322,10 +361,10 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(20), dp(20), dp(8))
         }
         header.addView(tv(t("my_notes"), 28f, cText, true))
-        header.addView(tv(Store.session()?.email ?: "", 13f, cMuted).apply {
+        header.addView(tv(if (Store.guest) t("guest_label") else Store.session()?.email ?: "", 13f, cMuted).apply {
             setPadding(0, dp(2), 0, dp(12))
             ellipsize = TextUtils.TruncateAt.END
-            maxLines = 1
+            maxLines = 2
         })
         val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val gap = LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(8) }
@@ -334,8 +373,20 @@ class MainActivity : Activity() {
             Store.lang = if (Store.lang == "ta") "en" else "ta"
             showNotes()
         }, gap)
-        chips.addView(chip(t("logout")) { doLogout() }, gap)
-        header.addView(chips)
+        if (Store.guest) {
+            // Guest notes stay stored and return the next time guest mode is chosen.
+            chips.addView(chip(t("account")) {
+                Store.guest = false
+                signupMode = false
+                showAuth()
+            }, gap)
+        } else {
+            chips.addView(chip(t("logout")) { doLogout() }, gap)
+        }
+        header.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(chips)
+        })
         column.addView(header, LinearLayout.LayoutParams(-1, -2))
 
         val box = LinearLayout(this).apply {
@@ -378,7 +429,8 @@ class MainActivity : Activity() {
             it.text = t("loading")
             it.visibility = View.VISIBLE
         }
-        call({ Api.listNotes(Store.token()) }, { render(it) })
+        val guest = Store.guest
+        call({ if (guest) Store.guestNotes.list() else Api.listNotes(Store.token()) }, { render(it) })
     }
 
     private fun render(list: List<Note>) {
@@ -465,13 +517,14 @@ class MainActivity : Activity() {
                 return@setOnClickListener
             }
             d.dismiss()
+            val guest = Store.guest
             if (n == null) {
-                call({ Api.addNote(Store.token(), ti, bo) }, {
+                call({ if (guest) Store.guestNotes.add(ti, bo) else Api.addNote(Store.token(), ti, bo) }, {
                     toast(t("saved"))
                     loadNotes()
                 })
             } else {
-                call({ Api.updateNote(Store.token(), n.id, ti, bo) }, {
+                call({ if (guest) Store.guestNotes.update(n.id, ti, bo) else Api.updateNote(Store.token(), n.id, ti, bo) }, {
                     toast(t("saved"))
                     loadNotes()
                 })
@@ -483,7 +536,8 @@ class MainActivity : Activity() {
                     .setMessage(t("del_q"))
                     .setPositiveButton(t("delete")) { _, _ ->
                         d.dismiss()
-                        call({ Api.deleteNote(Store.token(), n.id) }, {
+                        val guest = Store.guest
+                        call({ if (guest) Store.guestNotes.delete(n.id) else Api.deleteNote(Store.token(), n.id) }, {
                             toast(t("deleted"))
                             loadNotes()
                         })
@@ -515,9 +569,10 @@ class MainActivity : Activity() {
             toast(errText(e))
         }
     ) {
+        val guest = Store.guest
         io.execute {
             try {
-                val r = withAuth(work)
+                val r = if (guest) work() else withAuth(work)
                 ui { ok(r) }
             } catch (e: ApiException) {
                 ui {

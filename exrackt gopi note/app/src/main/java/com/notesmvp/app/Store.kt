@@ -16,6 +16,15 @@ object Store {
             ?: if (Locale.getDefault().language == "ta") "ta" else "en"
         set(v) { sp.edit().putString("lang", v).apply() }
 
+    var guest: Boolean
+        get() = sp.getBoolean("guest", false)
+        set(v) { sp.edit().putBoolean("guest", v).apply() }
+
+    val guestNotes = GuestNotes(
+        read = { sp.getString("guest_notes", null) },
+        write = { sp.edit().putString("guest_notes", it).commit() }
+    )
+
     fun session(): Session? {
         val at = sp.getString("at", null) ?: return null
         val rt = sp.getString("rt", null) ?: return null
@@ -23,7 +32,7 @@ object Store {
     }
 
     fun save(s: Session) {
-        sp.edit().putString("at", s.accessToken).putString("rt", s.refreshToken)
+        sp.edit().putBoolean("guest", false).putString("at", s.accessToken).putString("rt", s.refreshToken)
             .putLong("exp", s.expiresAt).putString("em", s.email).apply()
     }
 
